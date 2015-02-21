@@ -1,0 +1,171 @@
+Health and Economic Consequences
+========================================================================================
+## Analysis of Severe Weather Events in the United States
+
+This report is directed to government and municiple managers who are responsible for preparing for severe weather events and who may need to prioritize resources for the different types of events.
+
+This analysis addresses the following **2 questions about types of severe weather events across the United States**:
+
+1. Which events are most harmful with respect to population health?
+
+2. Which events have the greatest economic consequences?
+
+The Results show only the top 10 events in each category.
+
+<br>
+
+## Data Processing
+
+The data for this analysis is taken from the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database from 1950 to 2011, which tracks characteristics of major storms and weather events in the United States.
+
+The data can be obtained from [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) and is approximately 47 Mb in size.
+
+Some documentation on the database:
+
+* National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+* National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+
+First, load the libraries to be used in R analysis.
+
+```{r, message=FALSE}
+# load libraries used in analysis
+library(dplyr)          # For special data frame methods
+library(stringr)        # For trimming leading and trailing spaces
+library(ggplot2)        # For creating plots
+library(gridExtra)      # For displaying different plots side by side
+```
+
+Next, read in the database data from the compressed raw data (.csv.bz2 file)
+
+```{r read bz2 file, cache=TRUE, message=FALSE}
+data <- read.csv("repdata_data_StormData.csv.bz2")      # read the data
+data <- tbl_df(data)                                    # convert to dplyr data frame
+```
+
+I noticed in reviewing the different events that some of them were identical accept for upper or lower case letters (e.g. "WIND DAMAGE" verses "Wind Damage"). To combine these event types I converted them to all upper case, as follows:
+
+```{r event upper case}
+data$EVTYPE <- toupper(as.character(data$EVTYPE))
+```
+
+This reduced the event types from 985 to 898 unique types.
+
+To prepare for summarzing the data, it needs to be grouped by the various event types.
+
+```{r}
+data <- group_by(data, EVTYPE)
+```
+
+### Health Impact
+
+In order to determine the most harmful impact of the severe weather on the population health, both fatalities and injuries are independently summed for each event type and then ordered by events with most to least.
+
+```{r}
+fatal <- summarize(data, Fatalities = sum(FATALITIES))
+fatal <- arrange(fatal, desc(Fatalities))
+
+injure <- summarize(data, Injuries = sum(INJURIES))
+injure <- arrange(injure, desc(Injuries))
+```
+
+Only take the top 10 in each category.
+
+```{r}
+fatal10 <- fatal[1:10, ]
+injure10 <- injure[1:10, ]
+
+# sort data to prepare to be plotted in decreasing order
+fatal10 <- arrange(fatal10, Fatalities)
+injure10 <- arrange(injure10, Injuries)
+```
+
+### Economic Impact
+
+In order to determine which severe weather events had the greatest economic impact, both property and crop damage will be considered individually. Each damage type has a possible cost magnitude multiplier, which must be considered in order to sum the costs appropriately. These include "K" for thousands, "M" for millions, and "B" for billions.
+
+```{r, cache=TRUE}
+# Convert magnitude multipliers to upper case only
+data$PROPDMGEXP <- toupper(data$PROPDMGEXP)
+data$CROPDMGEXP <- toupper(data$CROPDMGEXP)
+
+# Apply multipliers to cost values
+data[data$PROPDMGEXP=="K", ]$PROPDMG <- data[data$PROPDMGEXP=="K", ]$PROPDMG * 1000
+data[data$PROPDMGEXP=="M", ]$PROPDMG <- data[data$PROPDMGEXP=="M", ]$PROPDMG * 1000000
+data[data$PROPDMGEXP=="B", ]$PROPDMG <- data[data$PROPDMGEXP=="B", ]$PROPDMG * 1000000000
+data[data$CROPDMGEXP=="K", ]$CROPDMG <- data[data$CROPDMGEXP=="K", ]$CROPDMG * 1000
+data[data$CROPDMGEXP=="M", ]$CROPDMG <- data[data$CROPDMGEXP=="M", ]$CROPDMG * 1000000
+data[data$CROPDMGEXP=="B", ]$CROPDMG <- data[data$CROPDMGEXP=="B", ]$CROPDMG * 1000000000
+```
+
+Now that cost values are properly adjusted, sum them up and order by events with highest to lowest cost.
+
+```{r}
+prop <- summarize(data, Cost = sum(PROPDMG))
+prop <- arrange(prop, desc(Cost))
+
+crop <- summarize(data, Cost = sum(CROPDMG))
+crop <- arrange(crop, desc(Cost))
+```
+
+Only take the top 10 most severe in each category and adjust the values to Billions.
+
+```{r}
+prop10 <- prop[1:10, ]
+crop10 <- crop[1:10, ]
+
+prop10$Cost <- round(prop10$Cost / 1000000000, 2)
+crop10$Cost <- round(crop10$Cost / 1000000000, 2)
+
+# sort data to prepare to be plotted in decreasing order
+prop10 <- arrange(prop10, Cost)
+crop10 <- arrange(crop10, Cost)
+```
+
+<br>
+
+## Results
+
+As mentioned above, the results for each question only show the top 10 most severe and are based on data from 1950 to 2011.  
+
+### Health Impact  
+
+Severe weather events that are most harmful with respect to population health (fatalities and injuries):
+
+```{r, fig.width = 12}
+f <- ggplot(fatal10, aes(x=factor(EVTYPE, levels=unique(EVTYPE)), y=Fatalities)) +
+        geom_bar(stat='identity', fill = "lightskyblue", color="darkgray") +
+        labs(y = "Fatalities", x = "Weather Type") + 
+        labs(title = "Total Fatalities\nDue to Severe Weather\nin the US") +
+        coord_flip()
+
+g <- ggplot(injure10, aes(x=factor(EVTYPE, levels=unique(EVTYPE)), y=Injuries)) +
+        geom_bar(stat='identity', fill = "lightskyblue", color="darkgray") +
+        labs(y = "Injuries", x = "Weather Type") + 
+        labs(title = "Total Injuries\nDue to Severe Weather\nin the US") +
+        coord_flip()
+
+grid.arrange(f, g, ncol=2)
+```
+
+### Economic Impact
+
+Severe weather events that have the greatest economic consequences (property damage and crop damage):
+
+```{r, fig.width = 12}
+p <- ggplot(prop10, aes(x=factor(EVTYPE, levels=unique(EVTYPE)), y=Cost)) +
+        geom_bar(stat='identity', fill = "lightskyblue", color="darkgray") +
+        labs(y = "Cost (Billion $)", x = "Weather Type") + 
+        labs(title = "Total Property Damage Cost\nDue to Severe Weather\nin the US") +
+        coord_flip()
+
+c <- ggplot(crop10, aes(x=factor(EVTYPE, levels=unique(EVTYPE)), y=Cost)) +
+        geom_bar(stat='identity', fill = "lightskyblue", color="darkgray") +
+        labs(y = "Cost (Billion $)", x = "Weather Type") + 
+        labs(title = "Total Crop Damage Cost\nDue to Severe Weather\nin the US") +
+        coord_flip()
+
+grid.arrange(p, c, ncol=2)
+```
+
+
